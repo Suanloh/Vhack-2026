@@ -1,0 +1,28 @@
+{
+  "name": "vhack26",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jordan0118/vhack26.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jordan0118/vhack26/issues"
+  },
+  "homepage": "https://github.com/jordan0118/vhack26#readme",
+  "dependencies": {
+    "framer-motion": "^12.37.0",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "recharts": "^3.8.0"
+  }
+}
