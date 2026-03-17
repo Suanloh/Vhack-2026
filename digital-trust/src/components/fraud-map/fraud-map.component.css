@@ -1,0 +1,6 @@
+.map-container {
+    height: 600px;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #1e1e1e;
+}

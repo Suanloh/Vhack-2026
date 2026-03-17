@@ -1,0 +1,11 @@
+.simulator-container {
+    background-color: #1e1e1e;
+    padding: 20px;
+    border-radius: 8px;
+    color: #fff;
+    text-align: center;
+}
+
+button {
+    margin-top: 15px;
+}

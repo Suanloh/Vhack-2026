@@ -1,0 +1,13 @@
+<div class="profile-container" *ngIf="userProfile">
+  <h3>User Behavior Profile ({{ userProfile.user_id }})</h3>
+  <div class="charts-grid">
+    <div class="chart-container">
+      <h4>Spending Distribution</h4>
+      <div echarts [options]="spendingChartOption" class="chart"></div>
+    </div>
+    <div class="chart-container">
+      <h4>Device Usage</h4>
+      <div echarts [options]="deviceChartOption" class="chart"></div>
+    </div>
+  </div>
+</div>

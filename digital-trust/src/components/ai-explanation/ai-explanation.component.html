@@ -1,0 +1,8 @@
+<div class="explanation-container" *ngIf="explanation">
+  <h3>AI-Powered Explanation</h3>
+  <p><strong>Decision:</strong> <span [ngClass]="getDecisionClass(decision)">{{ decision }}</span></p>
+  <ul>
+    <li *ngFor="let reason of explanation">{{ reason }}</li>
+  </ul>
+  <div echarts [options]="chartOption" class="chart"></div>
+</div>
