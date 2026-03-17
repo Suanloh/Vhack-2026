@@ -16,13 +16,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# --- CORS Configuration ---
-# React/Vite is typically http://localhost:5173
+import os
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    # keep 4200 if you still test an Angular build
     "http://localhost:4200",
+    "http://127.0.0.1:4200",
+    os.getenv("FRONTEND_URL", "http://localhost:5173"),  # Environment variable
+    "*",  # Only for dev
 ]
 
 app.add_middleware(

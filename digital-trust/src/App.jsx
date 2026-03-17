@@ -1,7 +1,7 @@
-import DigitalTrustApp from "./DigitalTrustApp";
+import React from 'react';
+import DigitalTrustApp from './DigitalTrustApp';
+import './App.css';
 
-function App() {
+export default function App() {
   return <DigitalTrustApp />;
 }
-
-export default App;
