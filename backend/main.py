@@ -1,6 +1,8 @@
-
 import asyncio
 import json
+import random
+from typing import Any
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,13 +13,16 @@ from fraud_engine import score_transaction
 app = FastAPI(
     title="FraudShield AI API",
     description="A real-time fraud detection system for digital wallets.",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # --- CORS Configuration ---
-# This allows the Angular frontend (running on a different port) to communicate with the backend.
+# React/Vite is typically http://localhost:5173
 origins = [
-    "http://localhost:4200",  # Default Angular development server
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    # keep 4200 if you still test an Angular build
+    "http://localhost:4200",
 ]
 
 app.add_middleware(
@@ -28,21 +33,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- WebSocket for Live Transaction Streaming ---
+# --- WebSocket connection manager ---
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
+        self._producer_task: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        # Start a single shared producer when the first client connects
+        if self._producer_task is None or self._producer_task.done():
+            self._producer_task = asyncio.create_task(self._producer_loop())
 
-    async def broadcast(self, message: str):
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+        # Stop producer if nobody is connected (optional, saves CPU)
+        if not self.active_connections and self._producer_task:
+            self._producer_task.cancel()
+            self._producer_task = None
+
+    async def broadcast(self, payload: dict[str, Any]):
+        message = json.dumps(payload, default=str)
+        dead: list[WebSocket] = []
+
         for connection in self.active_connections:
-            await connection.send_text(message)
+            try:
+                await connection.send_text(message)
+            except Exception:
+                dead.append(connection)
+
+        for ws in dead:
+            self.disconnect(ws)
+
+    async def _producer_loop(self):
+        while True:
+            await asyncio.sleep(random.uniform(2, 5))
+            transaction = generate_transaction()
+            risk_analysis = score_transaction(transaction)
+
+            payload = {
+                "transaction": transaction.model_dump(),
+                "risk_analysis": risk_analysis.model_dump(),
+            }
+
+            await self.broadcast(payload)
+
 
 manager = ConnectionManager()
 
@@ -51,30 +90,18 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Generate a new transaction every few seconds
-            await asyncio.sleep(random.uniform(2, 5))
-            transaction = generate_transaction()
-            # Score the transaction
-            risk_analysis = score_transaction(transaction)
-            
-            # Combine transaction and risk score into one payload
-            payload = {
-                "transaction": transaction.dict(),
-                "risk_analysis": risk_analysis.dict()
-            }
-            
-            await manager.broadcast(json.dumps(payload, default=str))
-            
+            # keep the socket open; actual sending is done by the producer loop
+            await asyncio.sleep(60)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        print("Client disconnected")
+
 
 # --- API Endpoints ---
-
 @app.post("/risk-score", response_model=RiskScore)
 async def get_risk_score(transaction: Transaction):
     """Receives a transaction and returns a fraud risk score."""
     return score_transaction(transaction)
+
 
 @app.post("/simulate-attack")
 async def simulate_attack(attack_params: SimulateAttack):
@@ -82,20 +109,21 @@ async def simulate_attack(attack_params: SimulateAttack):
     for _ in range(attack_params.num_transactions):
         fraud_transaction = generate_transaction(is_fraudulent=True)
         risk_analysis = score_transaction(fraud_transaction)
+
         payload = {
-            "transaction": fraud_transaction.dict(),
-            "risk_analysis": risk_analysis.dict()
+            "transaction": fraud_transaction.model_dump(),
+            "risk_analysis": risk_analysis.model_dump(),
         }
-        await manager.broadcast(json.dumps(payload, default=str))
-        await asyncio.sleep(random.uniform(0.5, 1.5)) # Space them out slightly
+
+        await manager.broadcast(payload)
+        await asyncio.sleep(random.uniform(0.5, 1.5))
+
     return {"message": f"{attack_params.num_transactions} fraudulent transactions simulated."}
 
 
 @app.get("/user-profile/{user_id}", response_model=UserProfile)
 async def get_user_profile(user_id: str):
     """Returns a mock user profile with behavioral analytics."""
-    # In a real system, this data would come from a database.
-    # Here, we generate it on the fly for demonstration.
     return UserProfile(
         user_id=user_id,
         trust_score=round(random.uniform(75, 99), 1),
@@ -115,12 +143,10 @@ async def get_user_profile(user_id: str):
         location_clusters=[
             {"lat": 1.3521, "lon": 103.8198, "transactions": random.randint(50, 100)},
             {"lat": 3.1390, "lon": 101.6869, "transactions": random.randint(10, 30)},
-        ]
+        ],
     )
 
-# --- Health Check Endpoint ---
+
 @app.get("/")
 async def root():
     return {"status": "FraudShield AI Backend is running!"}
-
-import random
