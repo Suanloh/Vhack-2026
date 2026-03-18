@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Shield, CheckCircle, AlertTriangle, Ban, User, RefreshCcw } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Shield, CheckCircle, AlertTriangle, Ban, User, RefreshCcw, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -47,6 +47,12 @@ const formatMoney = (amount, currency) => {
   }
 };
 
+const formatRiskScore = (v, decimals = 4) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(decimals);
+};
+
 const riskColor = (decision) => {
   switch ((decision || '').toUpperCase()) {
     case 'APPROVE':
@@ -73,6 +79,26 @@ const riskIcon = (decision) => {
   }
 };
 
+// Small helper for a nice modal close (ESC) + body scroll lock
+function useModalEffects(isOpen, onClose) {
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen, onClose]);
+}
+
 export default function DigitalTrustApp() {
   const [transactions, setTransactions] = useState([]);
   const [riskStats, setRiskStats] = useState({ approve: 0, flag: 0, block: 0 });
@@ -87,6 +113,9 @@ export default function DigitalTrustApp() {
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState('');
+
+  const isModalOpen = Boolean(selectedTx);
+  useModalEffects(isModalOpen, () => setSelectedTx(null));
 
   // WebSocket connection for live transactions
   useEffect(() => {
@@ -238,7 +267,7 @@ export default function DigitalTrustApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header */}
+      {/* Header (keep connected + simulate button) */}
       <header className="bg-slate-950/80 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -252,9 +281,7 @@ export default function DigitalTrustApp() {
           </div>
 
           <div className="flex items-center gap-4">
-            {connectionError && (
-              <div className="text-xs text-red-400 max-w-xs text-right">{connectionError}</div>
-            )}
+            {connectionError && <div className="text-xs text-red-400 max-w-xs text-right">{connectionError}</div>}
 
             <div className="flex items-center gap-2">
               <div
@@ -289,9 +316,245 @@ export default function DigitalTrustApp() {
         </div>
       </header>
 
-      {/* Main */}
-      <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-12 gap-6">
-        {/* Left: Live Feed */}
+      {/* HERO (Option 1): closer to Photo #1: vignette + glow + centered hero */}
+      <section className="relative overflow-hidden">
+        {/* Vignette / dark overlay */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.14),transparent_55%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_35%)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/40 to-slate-950/80" />
+
+        {/* Soft glow blobs */}
+        <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[720px] h-[420px] rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="pointer-events-none absolute -top-10 left-1/3 w-[520px] h-[320px] rounded-full bg-cyan-500/10 blur-3xl" />
+
+        <div className="relative max-w-7xl mx-auto px-6 py-20 sm:py-24">
+          <div className="text-center max-w-3xl mx-auto">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-slate-900/40 border border-slate-800 mb-6">
+              <Shield className="w-7 h-7 text-blue-400" />
+            </div>
+
+            <h2 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-white">
+              Digital Trust
+            </h2>
+            <p className="mt-4 text-lg text-slate-400">
+              Real-Time Fraud Shield for the Unbanked
+            </p>
+
+            <div className="mt-7 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-800 bg-slate-950/35 text-slate-300 text-sm">
+              <span className="text-blue-400">⚙</span>
+              <span>Machine Learning • Anomaly Detection • Behavioral AI</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative h-px bg-slate-800/80" />
+      </section>
+
+      {/* Problem description */}
+      <section className="max-w-7xl mx-auto px-6 py-12">
+        <div className="max-w-4xl mx-auto">
+          <h3 className="text-2xl font-bold text-white">The Problem</h3>
+          <div className="mt-4 h-px bg-slate-800" />
+          <p className="mt-6 text-slate-300 leading-relaxed">
+            Conventional rule-based fraud detection systems are often inadequate in identifying sophisticated or evolving
+            fraud patterns. For the unbanked, this leads to{' '}
+            <span className="text-red-400 font-semibold">False Declines</span>—blocking legitimate users who don't have
+            traditional banking histories. Our ML-powered shield addresses this by building behavioral baselines,
+            scoring anomalies in real time, handling extreme class imbalance, and integrating contextual signals beyond
+            the transaction itself.
+          </p>
+        </div>
+      </section>
+
+      {/* Risk overview centered (below description) */}
+      <section className="max-w-7xl mx-auto px-6 pb-12">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
+            <h2 className="text-white font-semibold mb-4 text-center">Risk Overview</h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-center">
+                <div className="text-xs text-slate-400">Approve</div>
+                <div className="text-xl text-white font-bold">{riskStats.approve}</div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-center">
+                <div className="text-xs text-slate-400">Flag</div>
+                <div className="text-xl text-white font-bold">{riskStats.flag}</div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 text-center">
+                <div className="text-xs text-slate-400">Block</div>
+                <div className="text-xl text-white font-bold">{riskStats.block}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="h-44 min-h-[176px]">
+                <div className="text-xs text-slate-400 mb-2">Decision mix</div>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70}>
+                      {pieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="h-44 min-h-[176px]">
+                <div className="text-xs text-slate-400 mb-2">Latest decision</div>
+                <div
+                  className={`h-[calc(100%-24px)] rounded-xl border flex items-center justify-center text-center p-4 ${riskColor(
+                    latestDecision,
+                  )}`}
+                >
+                  <div>
+                    <div className="flex items-center justify-center gap-2 text-sm font-semibold">
+                      {riskIcon(latestDecision)} {safeText(latestDecision || '—').toUpperCase()}
+                    </div>
+                    <div className="mt-2 text-xs text-slate-300">
+                      Latest risk score:{' '}
+                      <span className="font-semibold text-slate-100">
+                        {formatRiskScore(latest?.risk_analysis?.risk_score ?? latest?.risk_analysis?.score, 4)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 h-56 min-h-[224px]">
+              <div className="text-xs text-slate-400 mb-2">Recent risk trend (events)</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                  <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="approve"
+                    stackId="1"
+                    stroke="#34d399"
+                    fill="#34d399"
+                    fillOpacity={0.25}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="flag"
+                    stackId="1"
+                    stroke="#fbbf24"
+                    fill="#fbbf24"
+                    fillOpacity={0.25}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="block"
+                    stackId="1"
+                    stroke="#fb7185"
+                    fill="#fb7185"
+                    fillOpacity={0.25}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* User Profile + Live Feed below */}
+      <main className="max-w-7xl mx-auto px-6 pb-12 grid grid-cols-12 gap-6">
+        {/* User profile */}
+        <section className="col-span-12 lg:col-span-5 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="text-white font-semibold flex items-center gap-2">
+              <User className="w-4 h-4" /> User Profile
+            </h2>
+
+            <button
+              onClick={() => loadProfile(userId)}
+              className="text-xs px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white inline-flex items-center gap-2"
+              disabled={profileLoading}
+              title="Reload profile"
+            >
+              <RefreshCcw className={`w-4 h-4 ${profileLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+
+          <div className="flex gap-2 mb-3">
+            <input
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-slate-600"
+              placeholder="user id (e.g. user_001)"
+            />
+            <button
+              onClick={() => loadProfile(userId)}
+              className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+              disabled={profileLoading || !userId.trim()}
+            >
+              Load
+            </button>
+          </div>
+
+          {profileError ? <div className="text-sm text-red-400">{profileError}</div> : null}
+          {!profile && !profileError ? <div className="text-sm text-slate-300">No profile loaded.</div> : null}
+
+          {profile ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="text-xs text-slate-400">User</div>
+                <div className="text-white font-semibold">{safeText(profile.user_id)}</div>
+                <div className="mt-2 text-xs text-slate-400">Trust score</div>
+                <div className="text-2xl text-white font-bold">{safeText(profile.trust_score)}</div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="text-sm text-white font-semibold mb-2">Device usage</div>
+                <div className="text-xs text-slate-300">
+                  Mobile:{' '}
+                  <span className="text-white font-semibold">{safeText(profile.device_usage_breakdown?.mobile)}%</span>
+                  {' • '}
+                  Desktop:{' '}
+                  <span className="text-white font-semibold">{safeText(profile.device_usage_breakdown?.desktop)}%</span>
+                  {' • '}
+                  Tablet:{' '}
+                  <span className="text-white font-semibold">{safeText(profile.device_usage_breakdown?.tablet)}%</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="text-sm text-white font-semibold mb-2">Spending distribution</div>
+                <div className="space-y-1">
+                  {Object.entries(profile.spending_distribution || {}).map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between text-xs text-slate-300">
+                      <span>{safeText(k)}</span>
+                      <span className="text-white font-semibold">{safeText(v)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {Array.isArray(profile.location_clusters) && profile.location_clusters.length ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                  <div className="text-sm text-white font-semibold mb-2">Location clusters</div>
+                  <div className="space-y-2">
+                    {profile.location_clusters.slice(0, 5).map((c, idx) => (
+                      <div key={idx} className="text-xs text-slate-300 flex items-center justify-between gap-3">
+                        <span className="truncate">{safeLocationText(c)}</span>
+                        <span className="text-white font-semibold">{safeText(c?.transactions, '0')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+
+        {/* Live Feed */}
         <section className="col-span-12 lg:col-span-7 bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
             <h2 className="text-white font-semibold">Live Transaction Feed</h2>
@@ -308,8 +571,6 @@ export default function DigitalTrustApp() {
               <ul className="divide-y divide-slate-800">
                 {transactions.map((tx, idx) => {
                   const decision = tx?.risk_analysis?.decision || 'APPROVE';
-
-                  // location could be string OR object depending on your backend generator
                   const locationValue = tx?.location ?? tx?.geo ?? tx?.location_data ?? tx?.merchant_location;
 
                   return (
@@ -343,7 +604,7 @@ export default function DigitalTrustApp() {
                       <div className="mt-2 text-xs text-slate-400">
                         Risk score:{' '}
                         <span className="text-slate-200 font-semibold">
-                          {safeText(tx?.risk_analysis?.risk_score ?? tx?.risk_analysis?.score, '—')}
+                          {formatRiskScore(tx?.risk_analysis?.risk_score ?? tx?.risk_analysis?.score, 4)}
                         </span>
                         {Array.isArray(tx?.risk_analysis?.reasons) && tx.risk_analysis.reasons.length ? (
                           <>
@@ -359,203 +620,63 @@ export default function DigitalTrustApp() {
             )}
           </div>
         </section>
+      </main>
 
-        {/* Right: Risk + Profile */}
-        <section className="col-span-12 lg:col-span-5 grid gap-6">
-          {/* Risk overview */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-            <h2 className="text-white font-semibold mb-4">Risk Overview</h2>
+      {/* Option 2: Real modal overlay for selected transaction */}
+      <AnimatePresence>
+        {isModalOpen ? (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            aria-modal="true"
+            role="dialog"
+          >
+            {/* Backdrop */}
+            <motion.button
+              className="absolute inset-0 w-full h-full bg-black/70"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedTx(null)}
+              aria-label="Close modal"
+              type="button"
+            />
 
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                <div className="text-xs text-slate-400">Approve</div>
-                <div className="text-xl text-white font-bold">{riskStats.approve}</div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                <div className="text-xs text-slate-400">Flag</div>
-                <div className="text-xl text-white font-bold">{riskStats.flag}</div>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                <div className="text-xs text-slate-400">Block</div>
-                <div className="text-xl text-white font-bold">{riskStats.block}</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="h-44 min-h-[176px]">
-                <div className="text-xs text-slate-400 mb-2">Decision mix</div>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={70}>
-                      {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="h-44 min-h-[176px]">
-                <div className="text-xs text-slate-400 mb-2">Latest decision</div>
-                <div
-                  className={`h-[calc(100%-24px)] rounded-xl border flex items-center justify-center text-center p-4 ${riskColor(
-                    latestDecision,
-                  )}`}
-                >
-                  <div>
-                    <div className="flex items-center justify-center gap-2 text-sm font-semibold">
-                      {riskIcon(latestDecision)} {safeText(latestDecision || '—').toUpperCase()}
-                    </div>
-                    <div className="mt-2 text-xs text-slate-300">
-                      Latest risk score:{' '}
-                      <span className="font-semibold text-slate-100">
-                        {safeText(latest?.risk_analysis?.risk_score ?? latest?.risk_analysis?.score, '—')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 h-56 min-h-[224px]">
-              <div className="text-xs text-slate-400 mb-2">Recent risk trend (events)</div>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                  <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                  <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="approve" stackId="1" stroke="#34d399" fill="#34d399" fillOpacity={0.25} />
-                  <Area type="monotone" dataKey="flag" stackId="1" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.25} />
-                  <Area type="monotone" dataKey="block" stackId="1" stroke="#fb7185" fill="#fb7185" fillOpacity={0.25} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* User profile */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h2 className="text-white font-semibold flex items-center gap-2">
-                <User className="w-4 h-4" /> User Profile
-              </h2>
-
-              <button
-                onClick={() => loadProfile(userId)}
-                className="text-xs px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white inline-flex items-center gap-2"
-                disabled={profileLoading}
-                title="Reload profile"
-              >
-                <RefreshCcw className={`w-4 h-4 ${profileLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-            </div>
-
-            <div className="flex gap-2 mb-3">
-              <input
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                className="w-full bg-slate-950/50 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-slate-600"
-                placeholder="user id (e.g. user_001)"
-              />
-              <button
-                onClick={() => loadProfile(userId)}
-                className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
-                disabled={profileLoading || !userId.trim()}
-              >
-                Load
-              </button>
-            </div>
-
-            {profileError ? <div className="text-sm text-red-400">{profileError}</div> : null}
-
-            {!profile && !profileError ? <div className="text-sm text-slate-300">No profile loaded.</div> : null}
-
-            {profile ? (
-              <div className="space-y-3">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="text-xs text-slate-400">User</div>
-                  <div className="text-white font-semibold">{safeText(profile.user_id)}</div>
-                  <div className="mt-2 text-xs text-slate-400">Trust score</div>
-                  <div className="text-2xl text-white font-bold">{safeText(profile.trust_score)}</div>
+            {/* Panel */}
+            <motion.div
+              className="relative w-full max-w-4xl bg-slate-950/80 backdrop-blur border border-slate-800 rounded-2xl overflow-hidden shadow-2xl"
+              initial={{ y: 18, scale: 0.98, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              exit={{ y: 18, scale: 0.98, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+            >
+              <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-white font-semibold">Selected Transaction (raw)</h2>
+                  <p className="text-xs text-slate-400">Press ESC or click outside to close</p>
                 </div>
 
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="text-sm text-white font-semibold mb-2">Device usage</div>
-                  <div className="text-xs text-slate-300">
-                    Mobile:{' '}
-                    <span className="text-white font-semibold">
-                      {safeText(profile.device_usage_breakdown?.mobile)}%
-                    </span>
-                    {' • '}
-                    Desktop:{' '}
-                    <span className="text-white font-semibold">
-                      {safeText(profile.device_usage_breakdown?.desktop)}%
-                    </span>
-                    {' • '}
-                    Tablet:{' '}
-                    <span className="text-white font-semibold">
-                      {safeText(profile.device_usage_breakdown?.tablet)}%
-                    </span>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="text-sm text-white font-semibold mb-2">Spending distribution</div>
-                  <div className="space-y-1">
-                    {Object.entries(profile.spending_distribution || {}).map(([k, v]) => (
-                      <div key={k} className="flex items-center justify-between text-xs text-slate-300">
-                        <span>{safeText(k)}</span>
-                        <span className="text-white font-semibold">{safeText(v)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* NEW: Location clusters panel (safe rendering to avoid React object child crash) */}
-                {Array.isArray(profile.location_clusters) && profile.location_clusters.length ? (
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                    <div className="text-sm text-white font-semibold mb-2">Location clusters</div>
-                    <div className="space-y-2">
-                      {profile.location_clusters.slice(0, 5).map((c, idx) => (
-                        <div key={idx} className="text-xs text-slate-300 flex items-center justify-between gap-3">
-                          <span className="truncate">
-                            {safeLocationText(c)}
-                          </span>
-                          <span className="text-white font-semibold">
-                            {safeText(c?.transactions, '0')}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        {/* Modal / detail */}
-        {selectedTx ? (
-          <div className="col-span-12">
-            <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-white font-semibold">Selected Transaction (raw)</h2>
                 <button
                   onClick={() => setSelectedTx(null)}
-                  className="text-sm px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white"
+                  className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white"
+                  type="button"
+                  aria-label="Close"
                 >
-                  Close
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-              <pre className="mt-4 text-xs text-slate-200 overflow-auto bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+
+              <div className="p-5">
+                <pre className="text-xs text-slate-200 overflow-auto bg-slate-950/60 border border-slate-800 rounded-xl p-4 max-h-[70vh]">
 {JSON.stringify(selectedTx, null, 2)}
-              </pre>
-            </div>
-          </div>
+                </pre>
+              </div>
+            </motion.div>
+          </motion.div>
         ) : null}
-      </main>
+      </AnimatePresence>
     </div>
   );
 }
