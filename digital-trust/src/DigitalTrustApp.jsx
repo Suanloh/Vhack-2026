@@ -111,7 +111,7 @@ export default function DigitalTrustApp() {
   const simulateAttack = async () => {
     setIsSimulating(true);
     try {
-      console.log('Sending attack simulation to:', `${BACKEND_URL}/simulate-attack`);
+      console.log('Sending attack simulation to:', `/simulate-attack`);
       const response = await fetch('/simulate-attack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,8 +126,7 @@ export default function DigitalTrustApp() {
       console.log('✅ Attack simulated successfully:', result);
     } catch (error) {
       console.error('❌ Attack simulation failed:', error);
-      alert(`Simulation Error: ${error.message} \n\nCheck if CORS is enabled on the backend for http://localhost:5173.`);
-    } finally {
+      alert(`Simulation Error: ${error.message}\n\nOpen DevTools → Network and confirm the request goes to http://localhost:8000/simulate-attack (or is proxied correctly).`);    } finally {
       setIsSimulating(false);
     }
   };
