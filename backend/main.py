@@ -77,8 +77,8 @@ class ConnectionManager:
             risk_analysis = score_transaction(transaction)
 
             payload = {
-                "transaction": transaction.model_dump(),
-                "risk_analysis": risk_analysis.model_dump(),
+                "transaction": to_payload(transaction),
+                "risk_analysis": to_payload(risk_analysis),
             }
 
             await self.broadcast(payload)
@@ -104,6 +104,15 @@ async def get_risk_score(transaction: Transaction):
     return score_transaction(transaction)
 
 
+def to_payload(obj):
+    if hasattr(obj, "model_dump"):   # pydantic v2
+        return obj.model_dump()
+    if hasattr(obj, "dict"):         # pydantic v1
+        return obj.dict()
+    if hasattr(obj, "__dict__"):     # plain class
+        return obj.__dict__
+    return obj
+
 @app.post("/simulate-attack")
 async def simulate_attack(attack_params: SimulateAttack):
     """Injects a burst of fraudulent transactions into the live stream."""
@@ -112,8 +121,8 @@ async def simulate_attack(attack_params: SimulateAttack):
         risk_analysis = score_transaction(fraud_transaction)
 
         payload = {
-            "transaction": fraud_transaction.model_dump(),
-            "risk_analysis": risk_analysis.model_dump(),
+        "transaction": to_payload(fraud_transaction),
+        "risk_analysis": to_payload(risk_analysis),
         }
 
         await manager.broadcast(payload)
