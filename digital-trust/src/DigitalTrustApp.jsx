@@ -15,13 +15,6 @@ const BACKEND_URL = (() => {
 const getWsUrl = () => {
   if (typeof window === 'undefined') return '';
   const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  
-  // Dev mode: separate backend server
-  if (window.location.port === '5173') {
-    return `ws://localhost:8000/transactions/live`;
-  }
-  
-  // Production: same host
   return `${wsProtocol}://${window.location.host}/transactions/live`;
 };
 
@@ -119,10 +112,10 @@ export default function DigitalTrustApp() {
     setIsSimulating(true);
     try {
       console.log('Sending attack simulation to:', `${BACKEND_URL}/simulate-attack`);
-      const response = await fetch(`${BACKEND_URL}/simulate-attack`, {
+      const response = await fetch('/simulate-attack', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ num_transactions: 5 })
+        body: JSON.stringify({ num_transactions: 5 }),
       });
       
       if (!response.ok) {

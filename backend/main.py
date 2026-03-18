@@ -24,7 +24,6 @@ origins = [
     "http://localhost:4200",
     "http://127.0.0.1:4200",
     os.getenv("FRONTEND_URL", "http://localhost:5173"),  # Environment variable
-    "*",  # Only for dev
 ]
 
 app.add_middleware(
