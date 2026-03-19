@@ -96,6 +96,69 @@ const riskIcon = (decision) => {
   }
 };
 
+// --- Investigation helpers ---
+const getTxUserId = (tx) => tx?.user_id ?? tx?.userId ?? tx?.user ?? '';
+const getTxMerchant = (tx) => tx?.merchant ?? tx?.merchant_name ?? tx?.merchantName ?? 'Merchant';
+const getTxAmountText = (tx) => formatMoney(tx?.amount, tx?.currency);
+const getTxKey = (tx, fallback) => tx?.transaction_id ?? tx?.id ?? fallback;
+
+// FIX: your backend uses risk_analysis.explanation (array) (see your screenshot)
+const getTxReasons = (tx) => {
+  const ra = tx?.risk_analysis ?? tx?.riskAnalysis ?? tx?.analysis ?? null;
+  if (!ra) return [];
+
+  const candidates = [
+    ra.explanation, // <-- IMPORTANT (array in your payload)
+    ra.explanations,
+    ra.reasons,
+    ra.reason,
+    ra.top_reasons,
+    ra.topReasons,
+    ra.flags,
+    ra.anomalies,
+    ra.signals,
+  ];
+
+  // arrays -> normalize to strings
+  for (const c of candidates) {
+    if (Array.isArray(c)) {
+      return c
+        .flatMap((x) => (x === null || x === undefined ? [] : [x]))
+        .map((x) => {
+          if (typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean') return String(x);
+          if (x && typeof x === 'object') {
+            return x.reason ?? x.message ?? x.name ?? x.feature ?? x.signal ?? x.title ?? JSON.stringify(x);
+          }
+          return String(x);
+        })
+        .map((s) => String(s).trim())
+        .filter(Boolean);
+    }
+  }
+
+  // scalars -> wrap
+  for (const c of candidates) {
+    if (typeof c === 'string' || typeof c === 'number' || typeof c === 'boolean') {
+      const s = String(c).trim();
+      return s ? [s] : [];
+    }
+  }
+
+  // object map -> key/value
+  // (covers explanation being an object map in some future backend shape)
+  if (ra.explanation && typeof ra.explanation === 'object') {
+    try {
+      return Object.entries(ra.explanation).map(([k, v]) => `${k}: ${safeText(v)}`);
+    } catch {
+      // ignore
+    }
+  }
+
+  return [];
+};
+
+const reasonsPreview = (reasons, max = 3) => reasons.slice(0, max);
+
 // Small helper for a nice modal close (ESC) + body scroll lock
 function useModalEffects(isOpen, onClose) {
   useEffect(() => {
@@ -122,10 +185,14 @@ export default function DigitalTrustApp() {
   const [chartData, setChartData] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [connectionError, setConnectionError] = useState('');
+
+  // Selection Logic: click a transaction → it becomes the investigation focus
   const [selectedTx, setSelectedTx] = useState(null);
+
   const [isSimulating, setIsSimulating] = useState(false);
 
-  // User profile panel state
+  // Single user concept: only ONE userId is used for the profile panel.
+  // We DO keep the input, but we do NOT derive another "selectedUserId" state.
   const [userId, setUserId] = useState('user_001');
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -133,6 +200,53 @@ export default function DigitalTrustApp() {
 
   const isModalOpen = Boolean(selectedTx);
   useModalEffects(isModalOpen, () => setSelectedTx(null));
+
+  const selectedReasons = useMemo(() => getTxReasons(selectedTx), [selectedTx]);
+
+  const simulateAttack = async () => {
+    setIsSimulating(true);
+    try {
+      const response = await fetch('/simulate-attack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ num_transactions: 5 }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const result = await response.json();
+      // eslint-disable-next-line no-console
+      console.log('✅ Attack simulated successfully:', result);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('❌ Attack simulation failed:', error);
+      alert(`Simulation Error: ${error.message}`);
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
+  const loadProfile = async (uid = userId) => {
+    setProfileLoading(true);
+    setProfileError('');
+    try {
+      const res = await fetch(`/user-profile/${encodeURIComponent(uid)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const json = await res.json();
+      setProfile(json);
+    } catch (e) {
+      setProfile(null);
+      setProfileError(e.message || String(e));
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  // Investigate user = load the ONE userId used by the context panel (does not change based on tx.user_id)
+  const investigateSelectedUser = async () => {
+    const uid = String(userId || '').trim();
+    if (!uid) return;
+    await loadProfile(uid);
+  };
 
   // WebSocket connection for live transactions
   useEffect(() => {
@@ -217,45 +331,6 @@ export default function DigitalTrustApp() {
     };
   }, []);
 
-  // Simulate attack
-  const simulateAttack = async () => {
-    setIsSimulating(true);
-    try {
-      const response = await fetch('/simulate-attack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ num_transactions: 5 }),
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      const result = await response.json();
-      // eslint-disable-next-line no-console
-      console.log('✅ Attack simulated successfully:', result);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('❌ Attack simulation failed:', error);
-      alert(`Simulation Error: ${error.message}`);
-    } finally {
-      setIsSimulating(false);
-    }
-  };
-
-  const loadProfile = async (uid = userId) => {
-    setProfileLoading(true);
-    setProfileError('');
-    try {
-      const res = await fetch(`/user-profile/${encodeURIComponent(uid)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-      const json = await res.json();
-      setProfile(json);
-    } catch (e) {
-      setProfile(null);
-      setProfileError(e.message || String(e));
-    } finally {
-      setProfileLoading(false);
-    }
-  };
-
   useEffect(() => {
     loadProfile(userId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -289,7 +364,7 @@ export default function DigitalTrustApp() {
     return safeText(loc);
   };
 
-  // ------- Profile visualizations (NEW) -------
+  // ------- Profile visualizations -------
   const deviceData = useMemo(() => {
     const d = profile?.device_usage_breakdown || {};
     return [
@@ -304,13 +379,12 @@ export default function DigitalTrustApp() {
       .map(([name, raw]) => ({ name: String(name), value: pct(raw) }))
       .filter((x) => Number.isFinite(x.value));
 
-    // sort descending for cleaner bars (does not change structure, just ordering)
+    // sort descending for cleaner bars
     entries.sort((a, b) => b.value - a.value);
     return entries;
   }, [profile]);
 
-  // A “radar” summary using *existing fields* (no backend change).
-  // If you later add real sub-scores from backend, just map them here.
+  // Radar summary using existing fields (no backend change)
   const radarData = useMemo(() => {
     const trust = pct(profile?.trust_score);
 
@@ -351,9 +425,12 @@ export default function DigitalTrustApp() {
     return max || 100;
   }, [spendingData]);
 
+  // Selected highlighting (robust even if tx has no id)
+  const selectedKey = useMemo(() => getTxKey(selectedTx, null), [selectedTx]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Header (keep connected + simulate button) */}
+      {/* Header */}
       <header className="bg-slate-950/80 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -402,14 +479,12 @@ export default function DigitalTrustApp() {
         </div>
       </header>
 
-      {/* HERO (Option 1): closer to Photo #1: vignette + glow + centered hero */}
+      {/* HERO */}
       <section className="relative overflow-hidden">
-        {/* Vignette / dark overlay */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.14),transparent_55%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_35%)]" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/40 to-slate-950/80" />
 
-        {/* Soft glow blobs */}
         <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[720px] h-[420px] rounded-full bg-blue-500/10 blur-3xl" />
         <div className="pointer-events-none absolute -top-10 left-1/3 w-[520px] h-[320px] rounded-full bg-cyan-500/10 blur-3xl" />
 
@@ -514,23 +589,9 @@ export default function DigitalTrustApp() {
                   <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
                   <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
                   <Tooltip />
-                  <Area
-                    type="monotone"
-                    dataKey="approve"
-                    stackId="1"
-                    stroke="#34d399"
-                    fill="#34d399"
-                    fillOpacity={0.25}
-                  />
+                  <Area type="monotone" dataKey="approve" stackId="1" stroke="#34d399" fill="#34d399" fillOpacity={0.25} />
                   <Area type="monotone" dataKey="flag" stackId="1" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.25} />
-                  <Area
-                    type="monotone"
-                    dataKey="block"
-                    stackId="1"
-                    stroke="#fb7185"
-                    fill="#fb7185"
-                    fillOpacity={0.25}
-                  />
+                  <Area type="monotone" dataKey="block" stackId="1" stroke="#fb7185" fill="#fb7185" fillOpacity={0.25} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -538,9 +599,9 @@ export default function DigitalTrustApp() {
         </div>
       </section>
 
-      {/* User Profile + Live Feed below */}
+      {/* Context Panel + Live Feed */}
       <main className="max-w-7xl mx-auto px-6 pb-12 grid grid-cols-12 gap-6">
-        {/* User profile */}
+        {/* Context Panel */}
         <section className="col-span-12 lg:col-span-5 bg-slate-900/40 border border-slate-800 rounded-2xl p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
             <h2 className="text-white font-semibold flex items-center gap-2">
@@ -552,12 +613,15 @@ export default function DigitalTrustApp() {
               className="text-xs px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white inline-flex items-center gap-2"
               disabled={profileLoading}
               title="Reload profile"
+              type="button"
             >
               <RefreshCcw className={`w-4 h-4 ${profileLoading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
 
+          {/* Keep input so you can choose the ONE user you want to demo.
+              This does NOT create a second "selected user" concept. */}
           <div className="flex gap-2 mb-3">
             <input
               value={userId}
@@ -569,6 +633,7 @@ export default function DigitalTrustApp() {
               onClick={() => loadProfile(userId)}
               className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
               disabled={profileLoading || !userId.trim()}
+              type="button"
             >
               Load
             </button>
@@ -577,9 +642,88 @@ export default function DigitalTrustApp() {
           {profileError ? <div className="text-sm text-red-400">{profileError}</div> : null}
           {!profile && !profileError ? <div className="text-sm text-slate-300">No profile loaded.</div> : null}
 
+          {/* Selected Context */}
+          {selectedTx ? (
+            <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-400">Selected transaction</div>
+                  <div className="mt-1 text-sm text-white font-semibold truncate">
+                    {getTxMerchant(selectedTx)} • {getTxAmountText(selectedTx)}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400 truncate">
+                    Active user: <span className="text-slate-200 font-semibold">{safeText(userId, '—')}</span>
+                    {' • '}
+                    {selectedTx?.timestamp ? new Date(selectedTx.timestamp).toLocaleString() : '—'}
+                  </div>
+                </div>
+
+                <div
+                  className={`shrink-0 inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${riskColor(
+                    selectedTx?.risk_analysis?.decision,
+                  )}`}
+                >
+                  {riskIcon(selectedTx?.risk_analysis?.decision)}
+                  {safeText(selectedTx?.risk_analysis?.decision || '—').toUpperCase()}
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="text-[11px] text-slate-400">Risk score</div>
+                  <div className="text-base text-white font-bold">
+                    {formatRiskScore(selectedTx?.risk_analysis?.risk_score ?? selectedTx?.risk_analysis?.score, 4)}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                  <div className="text-[11px] text-slate-400">AI reasons</div>
+                  <div className="text-[11px] text-slate-300">{selectedReasons.length ? `${selectedReasons.length} signals` : '—'}</div>
+                </div>
+              </div>
+
+              {/* Reasons chips */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedReasons.length ? (
+                  selectedReasons.slice(0, 10).map((r, idx) => (
+                    <span
+                      key={`${r}-${idx}`}
+                      className="text-[11px] px-2 py-1 rounded-full border border-slate-700 bg-slate-900/50 text-slate-200"
+                      title={r}
+                    >
+                      {r}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs text-slate-400">No reasons provided.</span>
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  onClick={investigateSelectedUser}
+                  className="text-xs px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-slate-700"
+                  disabled={!String(userId || '').trim()}
+                  title="Reload profile for active user"
+                  type="button"
+                >
+                  Investigate user
+                </button>
+
+                <button
+                  onClick={() => setSelectedTx(null)}
+                  className="text-xs px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white"
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {profile ? (
             <div className="space-y-3">
-              {/* Header card (kept) + small radar on the right (NEW, but same card) */}
+              {/* Header + Radar */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
@@ -595,12 +739,7 @@ export default function DigitalTrustApp() {
                       <RadarChart data={radarData}>
                         <PolarGrid stroke="#334155" />
                         <PolarAngleAxis dataKey="metric" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                        <PolarRadiusAxis
-                          angle={60}
-                          domain={[0, 100]}
-                          tick={{ fill: '#64748b', fontSize: 9 }}
-                          stroke="#334155"
-                        />
+                        <PolarRadiusAxis angle={60} domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 9 }} stroke="#334155" />
                         <Radar dataKey="score" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.22} />
                         <Tooltip />
                       </RadarChart>
@@ -608,7 +747,6 @@ export default function DigitalTrustApp() {
                   </div>
                 </div>
 
-                {/* Mobile radar fallback */}
                 <div className="sm:hidden mt-3 h-[180px]">
                   <div className="text-xs text-slate-400 mb-1">Trust factors</div>
                   <ResponsiveContainer width="100%" height="100%">
@@ -623,7 +761,7 @@ export default function DigitalTrustApp() {
                 </div>
               </div>
 
-              {/* Device usage (kept) + bar chart (NEW) */}
+              {/* Device usage */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm text-white font-semibold">Device usage</div>
@@ -646,13 +784,7 @@ export default function DigitalTrustApp() {
                     <BarChart data={deviceData} layout="vertical" margin={{ top: 2, right: 12, bottom: 2, left: 6 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" horizontal={false} />
                       <XAxis type="number" domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} stroke="#334155" />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fill: '#cbd5e1', fontSize: 10 }}
-                        stroke="#334155"
-                        width={60}
-                      />
+                      <YAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10 }} stroke="#334155" width={60} />
                       <Tooltip />
                       <Bar dataKey="value" radius={[6, 6, 6, 6]}>
                         {deviceData.map((d) => (
@@ -664,14 +796,13 @@ export default function DigitalTrustApp() {
                 </div>
               </div>
 
-              {/* Spending distribution (kept) + horizontal bars (NEW) */}
+              {/* Spending distribution */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm text-white font-semibold">Spending distribution</div>
                   <div className="text-[11px] text-slate-400">category %</div>
                 </div>
 
-                {/* existing list (kept) */}
                 <div className="mt-2 space-y-1">
                   {Object.entries(profile.spending_distribution || {}).map(([k, v]) => (
                     <div key={k} className="flex items-center justify-between text-xs text-slate-300">
@@ -681,7 +812,6 @@ export default function DigitalTrustApp() {
                   ))}
                 </div>
 
-                {/* enhanced bars */}
                 <div className="mt-3">
                   {spendingData.length ? (
                     <div className="space-y-2">
@@ -711,7 +841,7 @@ export default function DigitalTrustApp() {
                 </div>
               </div>
 
-              {/* Location clusters (kept) + tiny “activity bars” (NEW) */}
+              {/* Location clusters */}
               {Array.isArray(profile.location_clusters) && profile.location_clusters.length ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
                   <div className="flex items-center justify-between gap-3 mb-2">
@@ -748,8 +878,18 @@ export default function DigitalTrustApp() {
         {/* Live Feed */}
         <section className="col-span-12 lg:col-span-7 bg-slate-900/40 border border-slate-800 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-            <h2 className="text-white font-semibold">Live Transaction Feed</h2>
-            <span className="text-xs text-slate-400">{transactions.length} events</span>
+            <div className="min-w-0">
+              <h2 className="text-white font-semibold">Live Transaction Feed</h2>
+              {selectedTx ? (
+                <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                  Investigating (active user): <span className="text-slate-200 font-semibold">{safeText(userId, '—')}</span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-400 mt-0.5">Click an event to investigate (reasons + context)</div>
+              )}
+            </div>
+
+            <span className="text-xs text-slate-400 shrink-0">{transactions.length} events</span>
           </div>
 
           <div className="max-h-[560px] overflow-auto">
@@ -762,20 +902,29 @@ export default function DigitalTrustApp() {
                 {transactions.map((tx, idx) => {
                   const decision = tx?.risk_analysis?.decision || 'APPROVE';
                   const locationValue = tx?.location ?? tx?.geo ?? tx?.location_data ?? tx?.merchant_location;
+                  const key = getTxKey(tx, idx);
+                  const isSelected = selectedKey !== null && key === selectedKey;
+
+                  const reasons = reasonsPreview(getTxReasons(tx), 3);
 
                   return (
                     <li
-                      key={safeText(tx?.transaction_id ?? tx?.id ?? idx, String(idx))}
-                      className="px-5 py-4 hover:bg-slate-900/70 cursor-pointer"
+                      key={safeText(key, String(idx))}
+                      className={`px-5 py-4 cursor-pointer transition-colors ${
+                        isSelected ? 'bg-slate-900/60 ring-1 ring-blue-500/30' : 'hover:bg-slate-900/70'
+                      }`}
                       onClick={() => setSelectedTx(tx)}
+                      title="Click to investigate this transaction"
                     >
                       <div className="flex items-center justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-sm text-white truncate">
-                            {safeText(tx?.merchant || tx?.merchant_name || 'Merchant')} • {formatMoney(tx?.amount, tx?.currency)}
+                            {getTxMerchant(tx)} • {getTxAmountText(tx)}
                           </div>
                           <div className="text-xs text-slate-400 truncate">
-                            {safeText(tx?.user_id, 'unknown-user')} • {safeLocationText(locationValue)} •{' '}
+                            {/* We still show tx.user_id in the feed because it's part of the event data,
+                                but it does NOT change the single active userId used for profile. */}
+                            {safeText(getTxUserId(tx), 'unknown-user')} • {safeLocationText(locationValue)} •{' '}
                             {tx?.timestamp ? new Date(tx.timestamp).toLocaleString() : '—'}
                           </div>
                         </div>
@@ -795,10 +944,10 @@ export default function DigitalTrustApp() {
                         <span className="text-slate-200 font-semibold">
                           {formatRiskScore(tx?.risk_analysis?.risk_score ?? tx?.risk_analysis?.score, 4)}
                         </span>
-                        {Array.isArray(tx?.risk_analysis?.reasons) && tx.risk_analysis.reasons.length ? (
+                        {reasons.length ? (
                           <>
                             {' '}
-                            • <span className="text-slate-300">{safeText(tx.risk_analysis.reasons[0])}</span>
+                            • <span className="text-slate-300">{reasons.join(' • ')}</span>
                           </>
                         ) : null}
                       </div>
@@ -811,7 +960,7 @@ export default function DigitalTrustApp() {
         </section>
       </main>
 
-      {/* Modal overlay for selected transaction */}
+      {/* Modal overlay for selected transaction (summary + reasons + raw JSON) */}
       <AnimatePresence>
         {isModalOpen ? (
           <motion.div
@@ -835,15 +984,15 @@ export default function DigitalTrustApp() {
 
             {/* Panel */}
             <motion.div
-              className="relative w-full max-w-4xl bg-slate-950/80 backdrop-blur border border-slate-800 rounded-2xl overflow-hidden shadow-2xl"
+              className="relative w-full max-w-5xl bg-slate-950/80 backdrop-blur border border-slate-800 rounded-2xl overflow-hidden shadow-2xl"
               initial={{ y: 18, scale: 0.98, opacity: 0 }}
               animate={{ y: 0, scale: 1, opacity: 1 }}
               exit={{ y: 18, scale: 0.98, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 260, damping: 22 }}
             >
               <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-white font-semibold">Selected Transaction (raw)</h2>
+                <div className="min-w-0">
+                  <h2 className="text-white font-semibold truncate">Investigation Details</h2>
                   <p className="text-xs text-slate-400">Press ESC or click outside to close</p>
                 </div>
 
@@ -857,8 +1006,76 @@ export default function DigitalTrustApp() {
                 </button>
               </div>
 
+              {/* Human-readable summary */}
+              <div className="p-5 border-b border-slate-800">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-xs text-slate-400">Transaction</div>
+                    <div className="mt-1 text-lg text-white font-semibold truncate">
+                      {getTxMerchant(selectedTx)} • {getTxAmountText(selectedTx)}
+                    </div>
+
+                    <div className="mt-1 text-xs text-slate-400 truncate">
+                      Active user: <span className="text-slate-200 font-semibold">{safeText(userId, '—')}</span>
+                      {' • '}
+                      {selectedTx?.timestamp ? new Date(selectedTx.timestamp).toLocaleString() : '—'}
+                    </div>
+
+                    <div className="mt-2 text-xs text-slate-400">
+                      Risk score:{' '}
+                      <span className="text-slate-100 font-semibold">
+                        {formatRiskScore(selectedTx?.risk_analysis?.risk_score ?? selectedTx?.risk_analysis?.score, 4)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <div
+                      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${riskColor(
+                        selectedTx?.risk_analysis?.decision,
+                      )}`}
+                    >
+                      {riskIcon(selectedTx?.risk_analysis?.decision)}
+                      {safeText(selectedTx?.risk_analysis?.decision || '—').toUpperCase()}
+                    </div>
+
+                    <button
+                      onClick={investigateSelectedUser}
+                      className="mt-3 w-full text-xs px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:bg-slate-700"
+                      disabled={!String(userId || '').trim()}
+                      type="button"
+                      title="Reload profile for active user"
+                    >
+                      Investigate user
+                    </button>
+                  </div>
+                </div>
+
+                {/* Explainability chips */}
+                <div className="mt-4">
+                  <div className="text-xs text-slate-400 mb-2">AI reasons</div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedReasons.length ? (
+                      selectedReasons.map((r, idx) => (
+                        <span
+                          key={`${r}-${idx}`}
+                          className="text-[11px] px-2 py-1 rounded-full border border-slate-700 bg-slate-900/50 text-slate-200"
+                          title={r}
+                        >
+                          {r}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-400">No reasons provided.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Raw JSON */}
               <div className="p-5">
-                <pre className="text-xs text-slate-200 overflow-auto bg-slate-950/60 border border-slate-800 rounded-xl p-4 max-h-[70vh]">
+                <div className="text-xs text-slate-400 mb-2">Raw event payload</div>
+                <pre className="text-xs text-slate-200 overflow-auto bg-slate-950/60 border border-slate-800 rounded-xl p-4 max-h-[55vh]">
 {JSON.stringify(selectedTx, null, 2)}
                 </pre>
               </div>
