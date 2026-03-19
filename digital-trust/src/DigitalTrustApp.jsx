@@ -12,6 +12,13 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
 } from 'recharts';
 
 const getWsUrl = () => {
@@ -31,6 +38,16 @@ const safeText = (v, fallback = '—') => {
   } catch {
     return fallback;
   }
+};
+
+const clamp01 = (n) => Math.max(0, Math.min(1, n));
+const toNumber = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+};
+const pct = (v) => {
+  const n = toNumber(v);
+  return Number.isFinite(n) ? n : 0;
 };
 
 const formatMoney = (amount, currency) => {
@@ -124,12 +141,14 @@ export default function DigitalTrustApp() {
 
     const connect = () => {
       const url = getWsUrl();
+      // eslint-disable-next-line no-console
       console.log('Attempting WebSocket connection to:', url);
       ws = new WebSocket(url);
 
       ws.onopen = () => {
         setConnectionStatus('connected');
         setConnectionError('');
+        // eslint-disable-next-line no-console
         console.log('✅ WebSocket connected successfully');
       };
 
@@ -165,6 +184,7 @@ export default function DigitalTrustApp() {
             return next;
           });
         } catch (error) {
+          // eslint-disable-next-line no-console
           console.error('Error parsing WebSocket data:', error);
         }
       };
@@ -174,10 +194,12 @@ export default function DigitalTrustApp() {
         const errorMsg =
           '❌ WebSocket error. If you are in dev, ensure Vite proxy ws=true and backend is running on port 8000.';
         setConnectionError(errorMsg);
+        // eslint-disable-next-line no-console
         console.error(errorMsg);
       };
 
       ws.onclose = () => {
+        // eslint-disable-next-line no-console
         console.log('WebSocket disconnected, retrying in 3 seconds...');
         setConnectionStatus('connecting');
         reconnectTimeout = setTimeout(connect, 3000);
@@ -207,8 +229,10 @@ export default function DigitalTrustApp() {
 
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       const result = await response.json();
+      // eslint-disable-next-line no-console
       console.log('✅ Attack simulated successfully:', result);
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('❌ Attack simulation failed:', error);
       alert(`Simulation Error: ${error.message}`);
     } finally {
@@ -264,6 +288,68 @@ export default function DigitalTrustApp() {
     }
     return safeText(loc);
   };
+
+  // ------- Profile visualizations (NEW) -------
+  const deviceData = useMemo(() => {
+    const d = profile?.device_usage_breakdown || {};
+    return [
+      { name: 'Mobile', value: pct(d.mobile), color: '#60a5fa' },
+      { name: 'Desktop', value: pct(d.desktop), color: '#a78bfa' },
+      { name: 'Tablet', value: pct(d.tablet), color: '#34d399' },
+    ];
+  }, [profile]);
+
+  const spendingData = useMemo(() => {
+    const entries = Object.entries(profile?.spending_distribution || {})
+      .map(([name, raw]) => ({ name: String(name), value: pct(raw) }))
+      .filter((x) => Number.isFinite(x.value));
+
+    // sort descending for cleaner bars (does not change structure, just ordering)
+    entries.sort((a, b) => b.value - a.value);
+    return entries;
+  }, [profile]);
+
+  // A “radar” summary using *existing fields* (no backend change).
+  // If you later add real sub-scores from backend, just map them here.
+  const radarData = useMemo(() => {
+    const trust = pct(profile?.trust_score);
+
+    const mobile = pct(profile?.device_usage_breakdown?.mobile);
+    const desktop = pct(profile?.device_usage_breakdown?.desktop);
+    const tablet = pct(profile?.device_usage_breakdown?.tablet);
+
+    // simple “device diversity”: higher if usage is balanced across device types
+    const shares = [mobile, desktop, tablet].map((x) => clamp01(x / 100));
+    const mean = shares.reduce((a, b) => a + b, 0) / (shares.length || 1);
+    const variance = shares.reduce((acc, s) => acc + (s - mean) ** 2, 0) / (shares.length || 1);
+    const deviceDiversity = clamp01(1 - Math.sqrt(variance) * 1.8) * 100; // heuristic
+
+    // “spending concentration”: if one category dominates, concentration higher (riskier)
+    const sVals = spendingData.map((x) => clamp01(x.value / 100));
+    const sum = sVals.reduce((a, b) => a + b, 0) || 1;
+    const normalized = sVals.map((x) => x / sum);
+    const maxShare = normalized.length ? Math.max(...normalized) : 0;
+    const spendingBalance = clamp01(1 - maxShare) * 100; // more balanced -> higher
+
+    // “location stability”: more clusters => less stable (heuristic)
+    const clusters = Array.isArray(profile?.location_clusters) ? profile.location_clusters.length : 0;
+    const locationStability = clamp01(1 - Math.min(clusters, 10) / 10) * 100;
+
+    // Normalize trust score if it is 0..100 already; otherwise clamp
+    const trustNormalized = clamp01(trust / 100) * 100;
+
+    return [
+      { metric: 'Trust', score: trustNormalized },
+      { metric: 'Device Diversity', score: deviceDiversity },
+      { metric: 'Spending Balance', score: spendingBalance },
+      { metric: 'Location Stability', score: locationStability },
+    ];
+  }, [profile, spendingData]);
+
+  const spendingMax = useMemo(() => {
+    const max = spendingData.reduce((m, x) => Math.max(m, x.value), 0);
+    return max || 100;
+  }, [spendingData]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -333,12 +419,8 @@ export default function DigitalTrustApp() {
               <Shield className="w-7 h-7 text-blue-400" />
             </div>
 
-            <h2 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-white">
-              Digital Trust
-            </h2>
-            <p className="mt-4 text-lg text-slate-400">
-              Real-Time Fraud Shield for the Unbanked
-            </p>
+            <h2 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-white">Digital Trust</h2>
+            <p className="mt-4 text-lg text-slate-400">Real-Time Fraud Shield for the Unbanked</p>
 
             <div className="mt-7 inline-flex items-center gap-2 px-4 py-2 rounded-full border border-slate-800 bg-slate-950/35 text-slate-300 text-sm">
               <span className="text-blue-400">⚙</span>
@@ -440,14 +522,7 @@ export default function DigitalTrustApp() {
                     fill="#34d399"
                     fillOpacity={0.25}
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="flag"
-                    stackId="1"
-                    stroke="#fbbf24"
-                    fill="#fbbf24"
-                    fillOpacity={0.25}
-                  />
+                  <Area type="monotone" dataKey="flag" stackId="1" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.25} />
                   <Area
                     type="monotone"
                     dataKey="block"
@@ -504,16 +579,58 @@ export default function DigitalTrustApp() {
 
           {profile ? (
             <div className="space-y-3">
+              {/* Header card (kept) + small radar on the right (NEW, but same card) */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                <div className="text-xs text-slate-400">User</div>
-                <div className="text-white font-semibold">{safeText(profile.user_id)}</div>
-                <div className="mt-2 text-xs text-slate-400">Trust score</div>
-                <div className="text-2xl text-white font-bold">{safeText(profile.trust_score)}</div>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-xs text-slate-400">User</div>
+                    <div className="text-white font-semibold truncate">{safeText(profile.user_id)}</div>
+                    <div className="mt-2 text-xs text-slate-400">Trust score</div>
+                    <div className="text-2xl text-white font-bold">{safeText(profile.trust_score)}</div>
+                  </div>
+
+                  <div className="hidden sm:block w-[170px] h-[140px]">
+                    <div className="text-[11px] text-slate-400 mb-1 text-right">Trust factors</div>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={radarData}>
+                        <PolarGrid stroke="#334155" />
+                        <PolarAngleAxis dataKey="metric" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                        <PolarRadiusAxis
+                          angle={60}
+                          domain={[0, 100]}
+                          tick={{ fill: '#64748b', fontSize: 9 }}
+                          stroke="#334155"
+                        />
+                        <Radar dataKey="score" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.22} />
+                        <Tooltip />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Mobile radar fallback */}
+                <div className="sm:hidden mt-3 h-[180px]">
+                  <div className="text-xs text-slate-400 mb-1">Trust factors</div>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={radarData}>
+                      <PolarGrid stroke="#334155" />
+                      <PolarAngleAxis dataKey="metric" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <PolarRadiusAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 9 }} stroke="#334155" />
+                      <Radar dataKey="score" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.22} />
+                      <Tooltip />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
 
+              {/* Device usage (kept) + bar chart (NEW) */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                <div className="text-sm text-white font-semibold mb-2">Device usage</div>
-                <div className="text-xs text-slate-300">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-white font-semibold">Device usage</div>
+                  <div className="text-[11px] text-slate-400">last 30 days</div>
+                </div>
+
+                <div className="mt-2 text-xs text-slate-300">
                   Mobile:{' '}
                   <span className="text-white font-semibold">{safeText(profile.device_usage_breakdown?.mobile)}%</span>
                   {' • '}
@@ -523,11 +640,39 @@ export default function DigitalTrustApp() {
                   Tablet:{' '}
                   <span className="text-white font-semibold">{safeText(profile.device_usage_breakdown?.tablet)}%</span>
                 </div>
+
+                <div className="mt-3 h-28">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={deviceData} layout="vertical" margin={{ top: 2, right: 12, bottom: 2, left: 6 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" horizontal={false} />
+                      <XAxis type="number" domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} stroke="#334155" />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        tick={{ fill: '#cbd5e1', fontSize: 10 }}
+                        stroke="#334155"
+                        width={60}
+                      />
+                      <Tooltip />
+                      <Bar dataKey="value" radius={[6, 6, 6, 6]}>
+                        {deviceData.map((d) => (
+                          <Cell key={d.name} fill={d.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
 
+              {/* Spending distribution (kept) + horizontal bars (NEW) */}
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                <div className="text-sm text-white font-semibold mb-2">Spending distribution</div>
-                <div className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-white font-semibold">Spending distribution</div>
+                  <div className="text-[11px] text-slate-400">category %</div>
+                </div>
+
+                {/* existing list (kept) */}
+                <div className="mt-2 space-y-1">
                   {Object.entries(profile.spending_distribution || {}).map(([k, v]) => (
                     <div key={k} className="flex items-center justify-between text-xs text-slate-300">
                       <span>{safeText(k)}</span>
@@ -535,18 +680,64 @@ export default function DigitalTrustApp() {
                     </div>
                   ))}
                 </div>
+
+                {/* enhanced bars */}
+                <div className="mt-3">
+                  {spendingData.length ? (
+                    <div className="space-y-2">
+                      {spendingData.map((row) => {
+                        const w = Math.round((row.value / spendingMax) * 100);
+                        return (
+                          <div key={row.name} className="grid grid-cols-12 gap-2 items-center">
+                            <div className="col-span-4 text-[11px] text-slate-300 truncate">{row.name}</div>
+                            <div className="col-span-7">
+                              <div className="h-2.5 rounded-full bg-slate-800/70 overflow-hidden border border-slate-700/40">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-blue-500/70 to-cyan-500/70"
+                                  style={{ width: `${w}%` }}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-span-1 text-[11px] text-slate-200 text-right tabular-nums">
+                              {row.value.toFixed(0)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-400">No spending data</div>
+                  )}
+                </div>
               </div>
 
+              {/* Location clusters (kept) + tiny “activity bars” (NEW) */}
               {Array.isArray(profile.location_clusters) && profile.location_clusters.length ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="text-sm text-white font-semibold mb-2">Location clusters</div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="text-sm text-white font-semibold">Location clusters</div>
+                    <div className="text-[11px] text-slate-400">top 5</div>
+                  </div>
+
                   <div className="space-y-2">
-                    {profile.location_clusters.slice(0, 5).map((c, idx) => (
-                      <div key={idx} className="text-xs text-slate-300 flex items-center justify-between gap-3">
-                        <span className="truncate">{safeLocationText(c)}</span>
-                        <span className="text-white font-semibold">{safeText(c?.transactions, '0')}</span>
-                      </div>
-                    ))}
+                    {profile.location_clusters.slice(0, 5).map((c, idx) => {
+                      const t = pct(c?.transactions);
+                      const barW = Math.round(clamp01(t / 100) * 100);
+                      return (
+                        <div key={idx} className="space-y-1">
+                          <div className="text-xs text-slate-300 flex items-center justify-between gap-3">
+                            <span className="truncate">{safeLocationText(c)}</span>
+                            <span className="text-white font-semibold tabular-nums">{safeText(c?.transactions, '0')}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-800/70 overflow-hidden border border-slate-700/40">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-violet-500/60 to-fuchsia-500/60"
+                              style={{ width: `${barW}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -564,8 +755,7 @@ export default function DigitalTrustApp() {
           <div className="max-h-[560px] overflow-auto">
             {transactions.length === 0 ? (
               <div className="p-6 text-slate-300">
-                No transactions yet. If you’re “Connected” but still see none, check the WS frames in
-                DevTools → Network → WS → /transactions/live.
+                No transactions yet. If you’re “Connected” but still see none, check the WS frames in DevTools → Network → WS → /transactions/live.
               </div>
             ) : (
               <ul className="divide-y divide-slate-800">
@@ -582,8 +772,7 @@ export default function DigitalTrustApp() {
                       <div className="flex items-center justify-between gap-4">
                         <div className="min-w-0">
                           <div className="text-sm text-white truncate">
-                            {safeText(tx?.merchant || tx?.merchant_name || 'Merchant')} •{' '}
-                            {formatMoney(tx?.amount, tx?.currency)}
+                            {safeText(tx?.merchant || tx?.merchant_name || 'Merchant')} • {formatMoney(tx?.amount, tx?.currency)}
                           </div>
                           <div className="text-xs text-slate-400 truncate">
                             {safeText(tx?.user_id, 'unknown-user')} • {safeLocationText(locationValue)} •{' '}
@@ -622,7 +811,7 @@ export default function DigitalTrustApp() {
         </section>
       </main>
 
-      {/* Option 2: Real modal overlay for selected transaction */}
+      {/* Modal overlay for selected transaction */}
       <AnimatePresence>
         {isModalOpen ? (
           <motion.div
