@@ -25,12 +25,14 @@ Vhack-2026 (branch: main)
 ├── package.json
 ├── package-lock.json
 ├── temp.txt
+|
 ├── backend/
 │   ├── fraud_engine.py
 │   ├── main.py
 │   ├── models.py
 │   ├── requirements.txt
 │   └── transaction_simulator.py
+|
 └── digital-trust/
     ├── .gitignore
     ├── README.md
@@ -41,15 +43,18 @@ Vhack-2026 (branch: main)
     ├── postcss.config.js
     ├── tailwind.config.js
     ├── vite.config.js
+    |
     ├── public/
     │   ├── favicon.svg
     │   └── icons.svg
+    |
     └── src/
         ├── App.css
         ├── App.jsx
         ├── DigitalTrustApp.jsx
         ├── index.css
         ├── main.jsx
+        |
         └── assets/
             ├── hero.png
             ├── react.svg
