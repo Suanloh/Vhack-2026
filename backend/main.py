@@ -160,3 +160,7 @@ async def get_user_profile(user_id: str):
 @app.get("/")
 async def root():
     return {"status": "FraudShield AI Backend is running!"}
+
+@app.api_route("/", methods=["GET", "HEAD"])
+async def root():
+    return {"status": "FraudShield AI Backend is running!"}
