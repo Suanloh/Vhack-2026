@@ -156,3 +156,8 @@ Real-time fraud detection with millisecond-level scoring
 Improved accuracy through contextual data integration
 Reduced false positives, enhancing user trust
 Privacy-first design principles
+
+
+## Deployed Links
+1. backend deployed links (Render): https://vhack-2026.onrender.com
+2. Frontend deployed links (Vercel): https://vhack-2026-beta.vercel.app
