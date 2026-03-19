@@ -23,8 +23,22 @@ import {
 
 const getWsUrl = () => {
   if (typeof window === 'undefined') return '';
-  const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${wsProtocol}://${window.location.host}/transactions/live`;
+  return toWsUrl('/transactions/live');
+};
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
+const toHttpUrl = (path) => `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
+
+const toWsUrl = (path) => {
+  const base = API_BASE.replace(/\/$/, '');
+  const wsBase = base.startsWith('https://')
+    ? base.replace('https://', 'wss://')
+    : base.startsWith('http://')
+      ? base.replace('http://', 'ws://')
+      : base;
+
+  return `${wsBase}${path.startsWith('/') ? path : `/${path}`}`;
 };
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -194,7 +208,7 @@ export default function DigitalTrustApp() {
   const simulateAttack = async () => {
     setIsSimulating(true);
     try {
-      const response = await fetch('/simulate-attack', {
+      const response = await fetch(toHttpUrl('/simulate-attack'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ num_transactions: 5 }),
@@ -215,7 +229,7 @@ export default function DigitalTrustApp() {
     setProfileLoading(true);
     setProfileError('');
     try {
-      const res = await fetch(`/user-profile/${encodeURIComponent(uid)}`);
+      const res = await fetch(toHttpUrl(`/user-profile/${encodeURIComponent(uid)}`));
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const json = await res.json();
       setProfile(json);
