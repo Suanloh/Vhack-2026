@@ -103,9 +103,15 @@ npm run dev
 
 You should see:
 ```
-✔ Compiled successfully.
-✔ Built successfully.
-** Angular Live Development Server is listening on localhost:5173 **
+> digital-trust@0.0.0 dev
+> vite
+
+
+  VITE v8.0.0  ready in 266 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+  ➜  press h + enter to show help
 ```
 
 ### 3. Open the Application
